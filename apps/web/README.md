@@ -1,7 +1,14 @@
-# Ваш фронтенд
+# Checkout frontend
 
-Добавьте сюда приложение на React и TypeScript. Назовите workspace `@checkout/web`, добавьте его зависимости и команды запуска в своём решении.
+Stage 1 содержит Vite/React foundation, единый API transport и восстановление гостевой сессии.
 
-Условия: [задание](../../docs/ASSIGNMENT.md). API: [интеграция](../../docs/INTEGRATION.md).
+Из корня repository:
 
-[Критерии оценки](../../docs/EVALUATION.md).
+```sh
+npm run dev:web
+npm run typecheck:web
+npm run test:web
+npm run build:web
+```
+
+По умолчанию frontend обращается к `http://localhost:4000`. Другой адрес можно задать через `VITE_API_BASE_URL`.

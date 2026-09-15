@@ -13,9 +13,13 @@
   },
   "scripts": {
     "dev": "npm run build -w @checkout/contracts && npm run dev -w @checkout/api",
+    "dev:web": "npm run dev -w @checkout/web",
     "build": "npm run build -w @checkout/contracts && npm run build -w @checkout/api",
+    "build:web": "npm run build -w @checkout/web",
     "start": "npm run start -w @checkout/api",
     "test": "npm run build && npm run test -w @checkout/api",
+    "test:web": "npm run test -w @checkout/web",
+    "typecheck:web": "npm run typecheck -w @checkout/web",
     "docs:generate": "npm run build && node scripts/openapi.mjs --write",
     "docs:check": "node scripts/openapi.mjs",
     "check": "npm run format:check && npm test && npm run docs:check",

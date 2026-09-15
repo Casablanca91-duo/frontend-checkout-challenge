@@ -1,0 +1,21 @@
+import { QueryClient } from '@tanstack/react-query';
+import { HttpApiError, NetworkError } from '../api/errors';
+
+export const queryKeys = {
+  authenticated: ['session'] as const,
+  cart: (sessionScope: string) => ['session', sessionScope, 'cart'] as const,
+};
+
+export function shouldRetryQuery(failureCount: number, error: unknown): boolean {
+  if (failureCount >= 2) return false;
+  return error instanceof NetworkError || (error instanceof HttpApiError && error.status >= 500);
+}
+
+export function createCheckoutQueryClient(): QueryClient {
+  return new QueryClient({
+    defaultOptions: {
+      queries: { retry: shouldRetryQuery },
+      mutations: { retry: false },
+    },
+  });
+}
