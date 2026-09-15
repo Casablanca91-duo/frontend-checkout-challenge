@@ -1,5 +1,17 @@
-import type { Cart, Product } from '@checkout/contracts';
+import type { Cart, Delivery, Product, Quote } from '@checkout/contracts';
 import type { ApiClient } from './client';
+
+export type CheckoutOptions = {
+  cart: Cart;
+  deliveryMethods: Array<{
+    id: Delivery['method'];
+    title: string;
+    price: number;
+    freeFrom: number | null;
+    pickupPoints: Array<{ id: string; title: string; address: string }>;
+  }>;
+  paymentMethods: Array<{ id: 'card' | 'cash_on_delivery'; title: string }>;
+};
 
 export type SessionPayload = {
   id: string;
@@ -16,6 +28,8 @@ export type CheckoutApi = SessionApi & {
   listProducts(signal?: AbortSignal): Promise<Product[]>;
   setCartItem(productId: string, quantity: number, signal?: AbortSignal): Promise<Cart>;
   removeCartItem(productId: string, signal?: AbortSignal): Promise<Cart>;
+  getCheckoutOptions(signal?: AbortSignal): Promise<CheckoutOptions>;
+  createQuote(cartVersion: number, delivery: Delivery, signal?: AbortSignal): Promise<Quote>;
 };
 
 export function createCheckoutApi(client: ApiClient): CheckoutApi {
@@ -69,6 +83,25 @@ export function createCheckoutApi(client: ApiClient): CheckoutApi {
         signal,
       });
       return getCart(signal);
+    },
+    async getCheckoutOptions(signal) {
+      const result = await client.request<CheckoutOptions>({
+        path: '/api/checkout/options',
+        method: 'GET',
+        auth: 'session',
+        signal,
+      });
+      return result.data;
+    },
+    async createQuote(cartVersion, delivery, signal) {
+      const result = await client.request<Quote>({
+        path: '/api/quotes',
+        method: 'POST',
+        auth: 'session',
+        body: { cartVersion, delivery },
+        signal,
+      });
+      return result.data;
     },
   };
 }

@@ -1,5 +1,5 @@
 import { useSession } from '../checkout/session/SessionProvider';
-import { CatalogCart } from '../checkout/catalog-cart/CatalogCart';
+import { Outlet } from 'react-router-dom';
 import styles from './App.module.css';
 
 export function App() {
@@ -35,5 +35,5 @@ export function App() {
     );
   }
 
-  return <CatalogCart sessionScope={session.sessionScope} />;
+  return <Outlet context={{ sessionScope: session.sessionScope }} />;
 }

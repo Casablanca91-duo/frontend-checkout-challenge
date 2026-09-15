@@ -6,6 +6,7 @@ export const queryKeys = {
   products: ['public', 'products'] as const,
   authenticated: ['session'] as const,
   cart: (sessionScope: string) => ['session', sessionScope, 'cart'] as const,
+  checkoutOptions: (sessionScope: string) => ['session', sessionScope, 'checkout-options'] as const,
 };
 
 export function shouldRetryQuery(failureCount: number, error: unknown): boolean {

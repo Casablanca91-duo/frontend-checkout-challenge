@@ -176,6 +176,7 @@
 
 .primaryButton,
 .secondaryButton,
+.checkoutLink,
 .removeButton,
 .quantity button {
   min-height: 44px;
@@ -195,6 +196,23 @@
   border: 1px solid var(--color-primary);
   color: var(--color-on-primary);
   background: var(--color-primary);
+}
+
+.checkoutLink {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 20px;
+  padding: 10px 16px;
+  border: 1px solid var(--color-primary);
+  color: var(--color-on-primary);
+  background: var(--color-primary);
+  text-align: center;
+  text-decoration: none;
+}
+
+.checkoutLink:hover {
+  background: var(--color-secondary);
 }
 
 .primaryButton:hover:not(:disabled) {
@@ -315,7 +333,14 @@
   margin-top: 24px;
 }
 
-:is(.cartLink, .primaryButton, .secondaryButton, .removeButton, .quantity button):focus-visible {
+:is(
+  .cartLink,
+  .primaryButton,
+  .secondaryButton,
+  .checkoutLink,
+  .removeButton,
+  .quantity button
+):focus-visible {
   outline: 3px solid var(--color-ring);
   outline-offset: 3px;
 }
@@ -369,6 +394,7 @@
 @media (prefers-reduced-motion: reduce) {
   .primaryButton,
   .secondaryButton,
+  .checkoutLink,
   .removeButton,
   .quantity button {
     transition: none;

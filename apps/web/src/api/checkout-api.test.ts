@@ -1,4 +1,4 @@
-import type { Cart } from '@checkout/contracts';
+import type { Cart, Quote } from '@checkout/contracts';
 import { describe, expect, it, vi } from 'vitest';
 import type { ApiClient } from './client';
 import { createCheckoutApi } from './checkout-api';
@@ -10,6 +10,18 @@ const cart: Cart = {
   quantity: 0,
   subtotal: 0,
   currency: 'RUB',
+};
+
+const quote: Quote = {
+  id: '00000000-0000-4000-8000-000000000004',
+  cartVersion: 1,
+  items: [],
+  delivery: { method: 'pickup', pickupPointId: 'point-center' },
+  subtotal: 249000,
+  shipping: 0,
+  total: 249000,
+  currency: 'RUB',
+  expiresAt: '2026-09-15T14:10:00.000Z',
 };
 
 function makeApi(responses: unknown[]) {
@@ -68,5 +80,31 @@ describe('checkout API', () => {
     });
     expect(request.mock.calls[0][0]).not.toHaveProperty('body');
     expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it('loads authenticated checkout options', async () => {
+    const options = { cart, deliveryMethods: [], paymentMethods: [] };
+    const { api, request } = makeApi([{ data: options, meta: { requestId: '1' }, links: {} }]);
+
+    await expect(api.getCheckoutOptions()).resolves.toBe(options);
+    expect(request).toHaveBeenCalledWith({
+      path: '/api/checkout/options',
+      method: 'GET',
+      auth: 'session',
+      signal: undefined,
+    });
+  });
+
+  it('creates a Quote with the supplied Cart version and Delivery payload', async () => {
+    const { api, request } = makeApi([{ data: quote, meta: { requestId: '1' }, links: {} }]);
+
+    await expect(api.createQuote(7, quote.delivery)).resolves.toBe(quote);
+    expect(request).toHaveBeenCalledWith({
+      path: '/api/quotes',
+      method: 'POST',
+      auth: 'session',
+      body: { cartVersion: 7, delivery: quote.delivery },
+      signal: undefined,
+    });
   });
 });

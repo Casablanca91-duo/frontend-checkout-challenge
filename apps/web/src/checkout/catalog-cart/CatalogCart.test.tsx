@@ -1,6 +1,7 @@
 import type { Cart, Product } from '@checkout/contracts';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { HttpApiError } from '../../api/errors';
 import { queryKeys } from '../../lib/query-client';
@@ -69,9 +70,11 @@ function renderCatalog(cart = emptyCart) {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   render(
-    <QueryClientProvider client={queryClient}>
-      <CatalogCart sessionScope="scope-1" />
-    </QueryClientProvider>,
+    <MemoryRouter>
+      <QueryClientProvider client={queryClient}>
+        <CatalogCart sessionScope="scope-1" />
+      </QueryClientProvider>
+    </MemoryRouter>,
   );
   return queryClient;
 }
@@ -157,9 +160,11 @@ describe('Catalog and Cart', () => {
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     });
     render(
-      <QueryClientProvider client={queryClient}>
-        <CatalogCart sessionScope="scope-error" />
-      </QueryClientProvider>,
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <CatalogCart sessionScope="scope-error" />
+        </QueryClientProvider>
+      </MemoryRouter>,
     );
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Каталог временно недоступен.');

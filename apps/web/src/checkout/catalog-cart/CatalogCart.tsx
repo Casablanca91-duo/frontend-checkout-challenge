@@ -1,18 +1,9 @@
-import type { Cart, Product } from '@checkout/contracts';
+import type { Product } from '@checkout/contracts';
 import { useMemo } from 'react';
+import { Link } from 'react-router-dom';
+import { formatMoney } from '../../lib/format';
 import { useCatalogCart } from './queries';
 import styles from './CatalogCart.module.css';
-
-const moneyFormatter = new Intl.NumberFormat('ru-RU', {
-  style: 'currency',
-  currency: 'RUB',
-  minimumFractionDigits: 0,
-});
-
-function formatMoney(value: number, currency: Cart['currency'] | Product['currency']) {
-  if (currency === 'RUB') return moneyFormatter.format(value / 100);
-  return `${value / 100} ${currency}`;
-}
 
 function ErrorNotice({ message, retry }: { message: string; retry(): void }) {
   return (
@@ -226,6 +217,9 @@ export function CatalogCart({ sessionScope }: { sessionScope: string }) {
                 <span>Итого · {cart.data.quantity} шт.</span>
                 <strong>{formatMoney(cart.data.subtotal, cart.data.currency)}</strong>
               </div>
+              <Link className={styles.checkoutLink} to="/checkout">
+                Перейти к оформлению
+              </Link>
             </>
           ) : null}
         </aside>
