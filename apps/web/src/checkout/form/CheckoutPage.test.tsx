@@ -1,12 +1,12 @@
 import type { Cart, Quote } from '@checkout/contracts';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { HttpApiError, NetworkError } from '../../api/errors';
 import { createCheckoutQueryClient, queryKeys } from '../../lib/query-client';
 import { CheckoutPage } from './CheckoutPage';
-import { checkoutOptionsQueryOptions } from './queries';
+import { checkoutOptionsQueryOptions, quoteRequestSignature } from './queries';
 
 const api = vi.hoisted(() => ({
   getCheckoutOptions: vi.fn(),
@@ -70,6 +70,14 @@ const quote: Quote = {
   expiresAt: '2026-09-15T14:10:00.000Z',
 };
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
 function renderCheckout(initialCart = cart) {
   api.getCart.mockResolvedValue(initialCart);
   api.getCheckoutOptions.mockResolvedValue({ ...options, cart: initialCart });
@@ -99,7 +107,7 @@ async function fillPickup() {
 }
 
 describe('Checkout Page', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => vi.resetAllMocks());
 
   it('uses one session-scoped Checkout Options key', () => {
     expect(checkoutOptionsQueryOptions('scope-1').queryKey).toEqual([
@@ -107,6 +115,35 @@ describe('Checkout Page', () => {
       'scope-1',
       'checkout-options',
     ]);
+  });
+
+  it('normalizes the Quote signature and includes the canonical Cart version', () => {
+    const normalized = quoteRequestSignature({
+      cartVersion: 7,
+      delivery: {
+        method: 'courier',
+        address: { city: 'Учебный', street: 'Примерная', house: '10' },
+      },
+    });
+
+    expect(
+      quoteRequestSignature({
+        cartVersion: 7,
+        delivery: {
+          method: 'courier',
+          address: { city: ' Учебный ', street: ' Примерная ', house: ' 10 ', apartment: ' ' },
+        },
+      }),
+    ).toBe(normalized);
+    expect(
+      quoteRequestSignature({
+        cartVersion: 8,
+        delivery: {
+          method: 'courier',
+          address: { city: 'Учебный', street: 'Примерная', house: '10' },
+        },
+      }),
+    ).not.toBe(normalized);
   });
 
   it('uses the canonical Cart version and exact pickup payload', async () => {
@@ -117,10 +154,14 @@ describe('Checkout Page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Рассчитать доставку и итог' }));
 
     await waitFor(() =>
-      expect(api.createQuote).toHaveBeenCalledWith(7, {
-        method: 'pickup',
-        pickupPointId: 'point-center',
-      }),
+      expect(api.createQuote).toHaveBeenCalledWith(
+        7,
+        {
+          method: 'pickup',
+          pickupPointId: 'point-center',
+        },
+        expect.any(AbortSignal),
+      ),
     );
   });
 
@@ -147,10 +188,14 @@ describe('Checkout Page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Рассчитать доставку и итог' }));
 
     await waitFor(() =>
-      expect(api.createQuote).toHaveBeenCalledWith(7, {
-        method: 'courier',
-        address: { city: 'Учебный', street: 'Примерная', house: '10', apartment: '1' },
-      }),
+      expect(api.createQuote).toHaveBeenCalledWith(
+        7,
+        {
+          method: 'courier',
+          address: { city: 'Учебный', street: 'Примерная', house: '10', apartment: '1' },
+        },
+        expect.any(AbortSignal),
+      ),
     );
   });
 
@@ -250,6 +295,101 @@ describe('Checkout Page', () => {
     fireEvent.click(submit);
     expect(api.createQuote).toHaveBeenCalledOnce();
     resolveQuote?.(quote);
+  });
+
+  it('rejects a late Quote response after Delivery changes and accepts only the new signature', async () => {
+    const first = deferred<Quote>();
+    const second = deferred<Quote>();
+    let firstSignal: AbortSignal | undefined;
+    api.createQuote
+      .mockImplementationOnce((_version, _delivery, signal: AbortSignal) => {
+        firstSignal = signal;
+        return first.promise;
+      })
+      .mockImplementationOnce(() => second.promise);
+    const courierQuote: Quote = {
+      ...quote,
+      id: '00000000-0000-4000-8000-000000000005',
+      delivery: {
+        method: 'courier',
+        address: { city: 'Учебный', street: 'Примерная', house: '10' },
+      },
+      shipping: 39000,
+      total: 555500,
+    };
+    renderCheckout();
+    await fillPickup();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Рассчитать доставку и итог' }));
+    await waitFor(() => expect(api.createQuote).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole('radio', { name: /Курьер/ }));
+    fireEvent.change(screen.getByLabelText(/Город/), { target: { value: 'Учебный' } });
+    fireEvent.change(screen.getByLabelText(/Улица/), { target: { value: 'Примерная' } });
+    fireEvent.change(screen.getByLabelText(/Дом/), { target: { value: '10' } });
+    expect(firstSignal?.aborted).toBe(true);
+
+    await act(async () => first.resolve(quote));
+    expect(screen.queryByRole('heading', { name: 'Расчёт сервера' })).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Рассчитать доставку и итог' })).toBeEnabled(),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Рассчитать доставку и итог' }));
+    await waitFor(() => expect(api.createQuote).toHaveBeenCalledTimes(2));
+    await act(async () => second.resolve(courierQuote));
+
+    const accepted = await screen.findByRole('heading', { name: 'Расчёт сервера' });
+    expect(accepted.closest('section')).toHaveTextContent(/5.?555/);
+    expect(api.createQuote).toHaveBeenLastCalledWith(
+      7,
+      courierQuote.delivery,
+      expect.any(AbortSignal),
+    );
+  });
+
+  it('rejects a late Quote response after the canonical Cart version changes', async () => {
+    const first = deferred<Quote>();
+    const second = deferred<Quote>();
+    let firstSignal: AbortSignal | undefined;
+    api.createQuote
+      .mockImplementationOnce((_version, _delivery, signal: AbortSignal) => {
+        firstSignal = signal;
+        return first.promise;
+      })
+      .mockImplementationOnce(() => second.promise);
+    const nextCart = { ...cart, version: 8 };
+    const nextQuote = {
+      ...quote,
+      id: '00000000-0000-4000-8000-000000000006',
+      cartVersion: 8,
+      total: 666600,
+    };
+    const queryClient = renderCheckout();
+    await fillPickup();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Рассчитать доставку и итог' }));
+    await waitFor(() => expect(api.createQuote).toHaveBeenCalledOnce());
+    act(() => queryClient.setQueryData(queryKeys.cart('scope-1'), nextCart));
+    await waitFor(() => expect(firstSignal?.aborted).toBe(true));
+
+    await act(async () => first.resolve(quote));
+    expect(screen.queryByRole('heading', { name: 'Расчёт сервера' })).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Рассчитать доставку и итог' })).toBeEnabled(),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Рассчитать доставку и итог' }));
+    await waitFor(() => expect(api.createQuote).toHaveBeenCalledTimes(2));
+    await act(async () => second.resolve(nextQuote));
+
+    const accepted = await screen.findByRole('heading', { name: 'Расчёт сервера' });
+    expect(accepted.closest('section')).toHaveTextContent('Версия корзины 8');
+    expect(accepted.closest('section')).toHaveTextContent(/6.?666/);
+    expect(api.createQuote).toHaveBeenLastCalledWith(
+      8,
+      { method: 'pickup', pickupPointId: 'point-center' },
+      expect.any(AbortSignal),
+    );
   });
 
   it('keeps automatic mutation retry disabled', () => {

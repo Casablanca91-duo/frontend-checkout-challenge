@@ -1,6 +1,6 @@
 import type { Quote } from '@checkout/contracts';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { HttpApiError } from '../../api/errors';
 import { formatMoney } from '../../lib/format';
@@ -17,7 +17,12 @@ import {
   type CheckoutFieldErrors,
   type CheckoutFormValues,
 } from './form-model';
-import { checkoutOptionsQueryOptions, needsCheckoutSync, useQuoteMutation } from './queries';
+import {
+  checkoutOptionsQueryOptions,
+  needsCheckoutSync,
+  quoteRequestSignature,
+  useQuoteMutation,
+} from './queries';
 
 function inputId(field: CheckoutField) {
   return `checkout-${field}`;
@@ -137,20 +142,19 @@ export function CheckoutPage({ sessionScope }: { sessionScope: string }) {
   const [values, setValues] = useState<CheckoutFormValues>(initialCheckoutValues);
   const [clientErrors, setClientErrors] = useState<CheckoutFieldErrors>({});
   const [quote, setQuote] = useState<Quote | null>(null);
-  const quoteMutation = useQuoteMutation(sessionScope, setQuote);
-  const previousCartVersion = useRef<number | undefined>(cart.data?.version);
-
-  useEffect(() => {
-    const currentVersion = cart.data?.version;
-    if (
-      quote &&
-      currentVersion !== undefined &&
-      (quote.cartVersion !== currentVersion || previousCartVersion.current !== currentVersion)
-    ) {
-      setQuote(null);
-    }
-    previousCartVersion.current = currentVersion;
-  }, [cart.data?.version, quote]);
+  const currentQuoteSignature = cart.data
+    ? quoteRequestSignature({
+        cartVersion: cart.data.version,
+        delivery: deliveryFromValues(values),
+      })
+    : null;
+  const quoteMutation = useQuoteMutation(sessionScope, currentQuoteSignature, setQuote);
+  const visibleQuote =
+    quote &&
+    currentQuoteSignature ===
+      quoteRequestSignature({ cartVersion: quote.cartVersion, delivery: quote.delivery })
+      ? quote
+      : null;
 
   const serverErrors = useMemo(
     () => fieldErrorsFromApi(quoteMutation.error),
@@ -159,12 +163,16 @@ export function CheckoutPage({ sessionScope }: { sessionScope: string }) {
   const errors = { ...serverErrors, ...clientErrors };
 
   function updateField(field: CheckoutField, value: string) {
+    if (
+      ['deliveryMethod', 'pickupPointId', 'city', 'street', 'house', 'apartment'].includes(field)
+    ) {
+      quoteMutation.invalidate();
+    }
     setValues((current) => ({ ...current, [field]: value }));
     if (errors[field]) {
       setClientErrors((current) => ({ ...current, [field]: undefined }));
       if (serverErrors[field]) quoteMutation.reset();
     }
-    if (quote) setQuote(null);
   }
 
   function focusFirstError(nextErrors: CheckoutFieldErrors) {
@@ -424,7 +432,7 @@ export function CheckoutPage({ sessionScope }: { sessionScope: string }) {
         </aside>
       </div>
 
-      {quote ? <QuoteSummary quote={quote} /> : null}
+      {visibleQuote ? <QuoteSummary quote={visibleQuote} /> : null}
     </main>
   );
 }
