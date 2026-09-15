@@ -1,4 +1,5 @@
 import { useSession } from '../checkout/session/SessionProvider';
+import { CatalogCart } from '../checkout/catalog-cart/CatalogCart';
 import styles from './App.module.css';
 
 export function App() {
@@ -34,13 +35,5 @@ export function App() {
     );
   }
 
-  return (
-    <main className={styles.page}>
-      <section className={styles.panel} aria-labelledby="ready-title">
-        <p className={styles.eyebrow}>Оформление заказа</p>
-        <h1 id="ready-title">Checkout frontend foundation ready</h1>
-        <p className={styles.description}>Сессия проверена, серверная корзина готова к работе.</p>
-      </section>
-    </main>
-  );
+  return <CatalogCart sessionScope={session.sessionScope} />;
 }

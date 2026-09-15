@@ -2,6 +2,8 @@ import { QueryClient } from '@tanstack/react-query';
 import { HttpApiError, NetworkError } from '../api/errors';
 
 export const queryKeys = {
+  public: ['public'] as const,
+  products: ['public', 'products'] as const,
   authenticated: ['session'] as const,
   cart: (sessionScope: string) => ['session', sessionScope, 'cart'] as const,
 };

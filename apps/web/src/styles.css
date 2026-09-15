@@ -16,8 +16,15 @@
   --color-secondary: #404040;
   --color-accent: #8a5605;
   --color-surface: #ffffff;
+  --color-muted: #efefeb;
   --color-border: #deded9;
+  --color-border-strong: #b7b7b0;
   --color-ring: #171717;
+  --color-success: #216e39;
+  --color-danger: #b42318;
+  --color-danger-text: #7a271a;
+  --color-danger-border: #f3b8b0;
+  --color-danger-surface: #fff2f0;
 }
 
 * {
@@ -30,6 +37,11 @@ body {
   min-height: 100vh;
   font-size: 16px;
   line-height: 1.5;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
 }
 
 button,
