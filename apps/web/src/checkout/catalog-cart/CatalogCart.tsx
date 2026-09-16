@@ -20,14 +20,22 @@ function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
+function indexBy<T, K>(items: readonly T[] | undefined, keyOf: (item: T) => K): Map<K, T> {
+  const index = new Map<K, T>();
+  if (items) {
+    for (const item of items) index.set(keyOf(item), item);
+  }
+  return index;
+}
+
 export function CatalogCart({ sessionScope }: { sessionScope: string }) {
   const { products, cart, mutation } = useCatalogCart(sessionScope);
   const cartItemsByProduct = useMemo(
-    () => new Map(cart.data?.items.map((item) => [item.productId, item])),
+    () => indexBy(cart.data?.items, (item) => item.productId),
     [cart.data?.items],
   );
   const productsById = useMemo(
-    () => new Map(products.data?.map((product) => [product.id, product])),
+    () => indexBy(products.data, (product) => product.id),
     [products.data],
   );
   const mutationProductId = mutation.isPending ? mutation.variables?.productId : undefined;
