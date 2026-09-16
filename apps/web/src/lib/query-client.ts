@@ -9,6 +9,10 @@ export const queryKeys = {
   checkoutOptions: (sessionScope: string) => ['session', sessionScope, 'checkout-options'] as const,
   order: (sessionScope: string, orderId: string) =>
     ['session', sessionScope, 'order', orderId] as const,
+  payments: (sessionScope: string, orderId: string) =>
+    ['session', sessionScope, 'order', orderId, 'payments'] as const,
+  payment: (sessionScope: string, paymentId: string) =>
+    ['session', sessionScope, 'payment', paymentId] as const,
 };
 
 export function shouldRetryQuery(failureCount: number, error: unknown): boolean {

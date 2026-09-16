@@ -24,6 +24,36 @@ describe('recovery storage', () => {
     expect(createRecoveryStorage(localStorage).read()).toEqual(record);
   });
 
+  it('accepts a persisted Payment intent and rejects a corrupted body', () => {
+    const record: CheckoutRecovery = {
+      schemaVersion: 1,
+      sessionToken: 'token-1',
+      currentOrderId: 'order-1',
+      pendingPayment: {
+        operation: 'createPayment',
+        orderId: 'order-1',
+        payload: '{}',
+        idempotencyKey: 'key-1',
+        scope: 'token-1',
+        phase: 'outcomeUnknown',
+        createdAt: '2026-09-15T10:00:00.000Z',
+      },
+      updatedAt: '2026-09-15T10:00:00.000Z',
+    };
+    localStorage.setItem(RECOVERY_STORAGE_KEY, JSON.stringify(record));
+    expect(createRecoveryStorage(localStorage).read()?.pendingPayment).toEqual(
+      record.pendingPayment,
+    );
+    localStorage.setItem(
+      RECOVERY_STORAGE_KEY,
+      JSON.stringify({
+        ...record,
+        pendingPayment: { ...record.pendingPayment, payload: '{"other":true}' },
+      }),
+    );
+    expect(createRecoveryStorage(localStorage).read()).toBeNull();
+  });
+
   it.each(['{', JSON.stringify({ schemaVersion: 99, updatedAt: '2026-09-15T10:00:00.000Z' })])(
     'safely rejects corrupted or unsupported data',
     (raw) => {

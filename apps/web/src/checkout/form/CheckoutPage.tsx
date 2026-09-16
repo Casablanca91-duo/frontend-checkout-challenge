@@ -9,6 +9,7 @@ import { checkoutApi, recoveryStorage } from '../../runtime';
 import { cartQueryOptions } from '../catalog-cart/queries';
 import styles from './CheckoutPage.module.css';
 import { pendingOrder, prepareOrder, sendOrderIntent, type OrderIntent } from './order-intent';
+import { PaymentSection } from './PaymentSection';
 import {
   deliveryFromValues,
   fieldErrorsFromApi,
@@ -144,7 +145,9 @@ function OrderSummary({ order }: { order: Order }) {
       <h2 id="order-title">
         {order.paymentMethod === 'cash_on_delivery'
           ? 'Заказ оформлен, оплата при получении'
-          : 'Заказ создан, ожидает оплаты'}
+          : order.status === 'paid' && order.paymentStatus === 'succeeded'
+            ? 'Оплата подтверждена — заказ оплачен'
+            : 'Заказ создан, ожидает оплаты'}
       </h2>
       <p>
         Статус заказа: {order.status}. Статус оплаты: {order.paymentStatus}.
@@ -361,7 +364,12 @@ export function CheckoutPage({ sessionScope }: { sessionScope: string }) {
   function startNewOrder() {
     const record = recoveryStorage.read();
     if (!record || record.pendingMutation) return;
-    const { currentOrderId: _previous, ...rest } = record;
+    const {
+      currentOrderId: _previous,
+      currentPaymentId: _payment,
+      pendingSimulation: _simulation,
+      ...rest
+    } = record;
     try {
       recoveryStorage.write({ ...rest, updatedAt: new Date().toISOString() });
       setOrderId(null);
@@ -622,11 +630,21 @@ export function CheckoutPage({ sessionScope }: { sessionScope: string }) {
         ) : order.data ? (
           <>
             <OrderSummary order={order.data} />
-            <p>
-              <Link to="/" onClick={startNewOrder}>
-                Перейти к новой покупке
-              </Link>
-            </p>
+            {order.data.paymentMethod === 'card' ? (
+              <PaymentSection
+                order={order.data}
+                sessionScope={sessionScope}
+                onOrderRefresh={() => void order.refetch()}
+              />
+            ) : null}
+            {order.data.paymentMethod === 'cash_on_delivery' ||
+            (order.data.status === 'paid' && order.data.paymentStatus === 'succeeded') ? (
+              <p>
+                <Link to="/" onClick={startNewOrder}>
+                  Перейти к новой покупке
+                </Link>
+              </p>
+            ) : null}
           </>
         ) : null
       ) : null}

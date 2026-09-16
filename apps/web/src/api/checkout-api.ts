@@ -1,4 +1,12 @@
-import type { Cart, Delivery, Order, Product, Quote } from '@checkout/contracts';
+import type {
+  Cart,
+  Delivery,
+  Order,
+  Payment,
+  Product,
+  Quote,
+  Simulation,
+} from '@checkout/contracts';
 import type { ApiClient } from './client';
 
 export type CheckoutOptions = {
@@ -11,6 +19,16 @@ export type CheckoutOptions = {
     pickupPoints: Array<{ id: string; title: string; address: string }>;
   }>;
   paymentMethods: Array<{ id: 'card' | 'cash_on_delivery'; title: string }>;
+};
+
+export type Sandbox = {
+  settlementDelayMs: number;
+  cards: Array<{
+    id: string;
+    title: string;
+    maskedNumber: string;
+    scenario: 'success' | 'decline';
+  }>;
 };
 
 export type SessionPayload = {
@@ -33,6 +51,14 @@ export type CheckoutApi = SessionApi & {
   createOrder(serializedBody: string, idempotencyKey: string): Promise<Order>;
   getOrder(orderId: string, signal?: AbortSignal): Promise<Order>;
   listOrders(signal?: AbortSignal): Promise<Order[]>;
+  getSandbox(signal?: AbortSignal): Promise<Sandbox>;
+  listPayments(orderId: string, signal?: AbortSignal): Promise<Payment[]>;
+  createPayment(orderId: string, serializedBody: string, idempotencyKey: string): Promise<Payment>;
+  getPayment(paymentId: string, signal?: AbortSignal): Promise<Payment>;
+  simulatePayment(
+    paymentId: string,
+    scenario: 'success' | 'decline' | 'cancel',
+  ): Promise<{ simulation: Simulation; retryAfterMs: number }>;
 };
 
 export function createCheckoutApi(client: ApiClient): CheckoutApi {
@@ -133,6 +159,56 @@ export function createCheckoutApi(client: ApiClient): CheckoutApi {
         signal,
       });
       return result.data;
+    },
+    async getSandbox(signal) {
+      return (
+        await client.request<Sandbox>({
+          path: '/api/sandbox',
+          method: 'GET',
+          auth: 'public',
+          signal,
+        })
+      ).data;
+    },
+    async listPayments(orderId, signal) {
+      return (
+        await client.request<Payment[]>({
+          path: `/api/orders/${encodeURIComponent(orderId)}/payments`,
+          method: 'GET',
+          auth: 'session',
+          signal,
+        })
+      ).data;
+    },
+    async createPayment(orderId, serializedBody, idempotencyKey) {
+      return (
+        await client.request<Payment>({
+          path: `/api/orders/${encodeURIComponent(orderId)}/payments`,
+          method: 'POST',
+          auth: 'session',
+          serializedBody,
+          idempotencyKey,
+        })
+      ).data;
+    },
+    async getPayment(paymentId, signal) {
+      return (
+        await client.request<Payment>({
+          path: `/api/payments/${encodeURIComponent(paymentId)}`,
+          method: 'GET',
+          auth: 'session',
+          signal,
+        })
+      ).data;
+    },
+    async simulatePayment(paymentId, scenario) {
+      const result = await client.request<Simulation>({
+        path: `/api/payments/${encodeURIComponent(paymentId)}/simulations`,
+        method: 'POST',
+        auth: 'session',
+        body: { scenario },
+      });
+      return { simulation: result.data, retryAfterMs: result.retryAfterMs ?? 750 };
     },
   };
 }

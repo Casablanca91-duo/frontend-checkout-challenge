@@ -23,6 +23,17 @@ function makeClient(fetchImpl: typeof fetch, token: string | null = null) {
 }
 
 describe('apiClient', () => {
+  it('normalizes Retry-After from a processing response', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(success({ status: 'processing' }), {
+        status: 202,
+        headers: { 'Retry-After': '1' },
+      }),
+    );
+    await expect(
+      makeClient(fetchImpl).request({ path: '/api/payment', method: 'GET', auth: 'public' }),
+    ).resolves.toMatchObject({ retryAfterMs: 1000 });
+  });
   it('sends the persisted serialized Order bytes and key unchanged', async () => {
     const fetchImpl = vi
       .fn<typeof fetch>()

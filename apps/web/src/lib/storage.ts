@@ -7,6 +7,17 @@ export type CheckoutRecovery = {
   schemaVersion: typeof RECOVERY_SCHEMA_VERSION;
   sessionToken?: string;
   currentOrderId?: string;
+  currentPaymentId?: string;
+  pendingPayment?: {
+    operation: 'createPayment';
+    orderId: string;
+    payload: string;
+    idempotencyKey: string;
+    scope: string;
+    phase: 'prepared' | 'inFlight' | 'outcomeUnknown';
+    createdAt: string;
+  };
+  pendingSimulation?: { paymentId: string; scenario: 'success' | 'decline' | 'cancel' };
   pendingMutation?: {
     operation: 'createOrder';
     payload: string;
@@ -37,7 +48,42 @@ function isRecovery(value: unknown): value is CheckoutRecovery {
     (record.sessionToken === undefined ||
       (typeof record.sessionToken === 'string' && record.sessionToken.length > 0)) &&
     (record.currentOrderId === undefined || typeof record.currentOrderId === 'string') &&
+    (record.currentPaymentId === undefined || typeof record.currentPaymentId === 'string') &&
+    (record.pendingPayment === undefined || isPendingPayment(record.pendingPayment)) &&
+    (record.pendingSimulation === undefined || isPendingSimulation(record.pendingSimulation)) &&
     (record.pendingMutation === undefined || isPendingMutation(record.pendingMutation))
+  );
+}
+
+function isPendingPayment(
+  value: unknown,
+): value is NonNullable<CheckoutRecovery['pendingPayment']> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const intent = value as Record<string, unknown>;
+  return (
+    intent.operation === 'createPayment' &&
+    typeof intent.orderId === 'string' &&
+    Boolean(intent.orderId) &&
+    intent.payload === '{}' &&
+    typeof intent.idempotencyKey === 'string' &&
+    Boolean(intent.idempotencyKey) &&
+    typeof intent.scope === 'string' &&
+    Boolean(intent.scope) &&
+    ['prepared', 'inFlight', 'outcomeUnknown'].includes(String(intent.phase)) &&
+    typeof intent.createdAt === 'string' &&
+    !Number.isNaN(Date.parse(intent.createdAt))
+  );
+}
+
+function isPendingSimulation(
+  value: unknown,
+): value is NonNullable<CheckoutRecovery['pendingSimulation']> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.paymentId === 'string' &&
+    Boolean(record.paymentId) &&
+    ['success', 'decline', 'cancel'].includes(String(record.scenario))
   );
 }
 

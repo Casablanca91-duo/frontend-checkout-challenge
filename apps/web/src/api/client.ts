@@ -29,7 +29,7 @@ type JsonRequestOptions = RequestOptions & { responseType?: 'json' };
 type EmptyRequestOptions = RequestOptions & { responseType: 'empty' };
 
 export type ApiClient = {
-  request<T>(options: JsonRequestOptions): Promise<ApiResult<T>>;
+  request<T>(options: JsonRequestOptions): Promise<ApiResult<T> & { retryAfterMs?: number }>;
   request(options: EmptyRequestOptions): Promise<void>;
 };
 
@@ -100,11 +100,13 @@ export function createApiClient({
 }: ApiClientOptions): ApiClient {
   const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
 
-  async function request<T>(options: JsonRequestOptions): Promise<ApiResult<T>>;
+  async function request<T>(
+    options: JsonRequestOptions,
+  ): Promise<ApiResult<T> & { retryAfterMs?: number }>;
   async function request(options: EmptyRequestOptions): Promise<void>;
   async function request<T>(
     options: JsonRequestOptions | EmptyRequestOptions,
-  ): Promise<ApiResult<T> | void> {
+  ): Promise<(ApiResult<T> & { retryAfterMs?: number }) | void> {
     if (!options.path.startsWith('/')) {
       throw new ProtocolError('API path должен быть относительным путём от корня.');
     }
@@ -148,7 +150,15 @@ export function createApiClient({
     if (options.responseType === 'empty') {
       throw new ProtocolError('Сервер вернул тело там, где ожидался пустой ответ.');
     }
-    return parseSuccess<T>(payload);
+    const result = parseSuccess<T>(payload);
+    const retryAfter = response.headers.get('Retry-After');
+    const seconds = retryAfter === null ? NaN : Number(retryAfter);
+    return {
+      ...result,
+      ...(response.status === 202 && Number.isFinite(seconds) && seconds >= 0
+        ? { retryAfterMs: Math.min(seconds * 1000, 60_000) }
+        : {}),
+    };
   }
 
   return { request };

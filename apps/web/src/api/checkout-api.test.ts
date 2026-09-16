@@ -136,4 +136,46 @@ describe('checkout API', () => {
       signal: undefined,
     });
   });
+
+  it('uses public sandbox cards and exact serialized Payment body/key; forwards simulation timing', async () => {
+    const sandbox = {
+      cards: [{ id: 'ok', title: 'Test', maskedNumber: '**** 4242', scenario: 'success' }],
+      settlementDelayMs: 1200,
+    };
+    const payment = { id: 'payment-1', status: 'pending' };
+    const simulation = { id: 'simulation-1', status: 'processing' };
+    const { api, request } = makeApi([
+      { data: sandbox },
+      { data: [payment] },
+      { data: payment },
+      { data: simulation, retryAfterMs: 1000 },
+      { data: payment },
+    ]);
+    await expect(api.getSandbox()).resolves.toBe(sandbox);
+    await expect(api.listPayments('order-1')).resolves.toEqual([payment]);
+    await expect(api.createPayment('order-1', '{}', 'key-1')).resolves.toBe(payment);
+    await expect(api.simulatePayment('payment-1', 'decline')).resolves.toEqual({
+      simulation,
+      retryAfterMs: 1000,
+    });
+    await api.getPayment('payment-1');
+    expect(request.mock.calls.map(([options]) => options)).toEqual([
+      { path: '/api/sandbox', method: 'GET', auth: 'public', signal: undefined },
+      { path: '/api/orders/order-1/payments', method: 'GET', auth: 'session', signal: undefined },
+      {
+        path: '/api/orders/order-1/payments',
+        method: 'POST',
+        auth: 'session',
+        serializedBody: '{}',
+        idempotencyKey: 'key-1',
+      },
+      {
+        path: '/api/payments/payment-1/simulations',
+        method: 'POST',
+        auth: 'session',
+        body: { scenario: 'decline' },
+      },
+      { path: '/api/payments/payment-1', method: 'GET', auth: 'session', signal: undefined },
+    ]);
+  });
 });
