@@ -1,6 +1,6 @@
 import type { Cart, Product } from '@checkout/contracts';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { HttpApiError } from '../../api/errors';
@@ -121,6 +121,49 @@ describe('Catalog and Cart', () => {
     expect(screen.getByText(/8.?888/)).toBeInTheDocument();
   });
 
+  it('does not restore an older Cart response after a successful mutation', async () => {
+    const authoritative: Cart = {
+      ...filledCart,
+      version: 2,
+      items: [{ ...filledCart.items[0], quantity: 3, lineTotal: 747000 }],
+      quantity: 3,
+      subtotal: 747000,
+    };
+    api.setCartItem.mockResolvedValue(authoritative);
+    const queryClient = renderCatalog(filledCart);
+    await screen.findByRole('button', { name: 'Добавить «Лампа «Орбита»» в корзину' });
+
+    let resolveOldCart!: (cart: Cart) => void;
+    api.getCart.mockImplementationOnce(
+      () => new Promise<Cart>((resolve) => (resolveOldCart = resolve)),
+    );
+    void queryClient.invalidateQueries({ queryKey: queryKeys.cart('scope-1') });
+    await waitFor(() => expect(api.getCart).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить «Лампа «Орбита»» в корзину' }));
+    await waitFor(() =>
+      expect(queryClient.getQueryData<Cart>(queryKeys.cart('scope-1'))?.version).toBe(2),
+    );
+
+    await act(async () => resolveOldCart(filledCart));
+    expect(queryClient.getQueryData<Cart>(queryKeys.cart('scope-1'))?.version).toBe(2);
+  });
+
+  it('keeps a newer canonical Cart when an older mutation response arrives', async () => {
+    let resolveMutation!: (cart: Cart) => void;
+    api.setCartItem.mockImplementation(
+      () => new Promise<Cart>((resolve) => (resolveMutation = resolve)),
+    );
+    const queryClient = renderCatalog(filledCart);
+    const add = await screen.findByRole('button', { name: 'Добавить «Лампа «Орбита»» в корзину' });
+    fireEvent.click(add);
+    await waitFor(() => expect(api.setCartItem).toHaveBeenCalledOnce());
+
+    const newerCart = { ...filledCart, version: 3 };
+    act(() => queryClient.setQueryData(queryKeys.cart('scope-1'), newerCart));
+    await act(async () => resolveMutation({ ...filledCart, version: 2 }));
+    expect(queryClient.getQueryData(queryKeys.cart('scope-1'))).toEqual(newerCart);
+  });
+
   it('announces a pending mutation and blocks repeated clicks', async () => {
     let resolveMutation: ((cart: Cart) => void) | undefined;
     api.setCartItem.mockImplementation(
@@ -141,7 +184,8 @@ describe('Catalog and Cart', () => {
   });
 
   it('removes an item and replaces the canonical cache with the server Cart', async () => {
-    api.removeCartItem.mockResolvedValue(emptyCart);
+    const removedCart = { ...emptyCart, version: 2 };
+    api.removeCartItem.mockResolvedValue(removedCart);
     const queryClient = renderCatalog(filledCart);
 
     fireEvent.click(
@@ -150,7 +194,7 @@ describe('Catalog and Cart', () => {
 
     await waitFor(() => expect(api.removeCartItem).toHaveBeenCalledWith('lamp-orbit'));
     await waitFor(() => expect(screen.getByText('Корзина пуста')).toBeInTheDocument());
-    expect(queryClient.getQueryData(queryKeys.cart('scope-1'))).toEqual(emptyCart);
+    expect(queryClient.getQueryData(queryKeys.cart('scope-1'))).toEqual(removedCart);
   });
 
   it('offers retry for a Catalog loading error', async () => {

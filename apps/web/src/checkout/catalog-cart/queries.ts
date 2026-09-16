@@ -33,8 +33,12 @@ export function useCatalogCart(sessionScope: string) {
       request.kind === 'set'
         ? checkoutApi.setCartItem(request.productId, request.quantity)
         : checkoutApi.removeCartItem(request.productId),
-    onSuccess: (authoritativeCart: Cart) => {
-      queryClient.setQueryData(queryKeys.cart(sessionScope), authoritativeCart);
+    onSuccess: async (authoritativeCart: Cart) => {
+      const cartKey = queryKeys.cart(sessionScope);
+      await queryClient.cancelQueries({ queryKey: cartKey });
+      queryClient.setQueryData<Cart>(cartKey, (current) =>
+        current && current.version > authoritativeCart.version ? current : authoritativeCart,
+      );
     },
     onError: async (error) => {
       if (!needsServerSync(error)) return;
