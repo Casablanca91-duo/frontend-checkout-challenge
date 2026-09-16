@@ -11,7 +11,7 @@ Use Node.js 24.x and npm 11.x. From the repository root:
 ```sh
 npm ci
 npm run dev       # API at http://localhost:4000
-npm run dev:web   # Vite at http://localhost:5173, in a second terminal
+npm run dev:web   # Vite at http://127.0.0.1:5173, in a second terminal
 ```
 
 `VITE_API_BASE_URL` can override the frontend API URL. The API uses `.data/store.json` for demo data and requires no external account. For a production API build, run `npm run build` and then `npm start`. The API reference is in `docs/INTEGRATION.md` and `docs/openapi.json`.
