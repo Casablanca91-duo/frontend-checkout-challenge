@@ -19,6 +19,7 @@
     "start": "npm run start -w @checkout/api",
     "test": "npm run build && npm run test -w @checkout/api",
     "test:web": "npm run test -w @checkout/web",
+    "test:e2e": "playwright test",
     "typecheck:web": "npm run typecheck -w @checkout/web",
     "docs:generate": "npm run build && node scripts/openapi.mjs --write",
     "docs:check": "node scripts/openapi.mjs",
@@ -30,6 +31,7 @@
   },
   "devDependencies": {
     "@apidevtools/swagger-parser": "13.0.0",
+    "@playwright/test": "1.58.2",
     "@types/node": "24.13.3",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",

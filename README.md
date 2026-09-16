@@ -1,58 +1,47 @@
-# Тестовое задание для фронтенд-разработчика
+# Checkout challenge
 
-Нужно сделать интерфейс магазина: каталог, корзину, оформление заказа и оплату тестовой картой. Бэкенд готов, фронтенд добавьте в `apps/web`.
+This repository contains the challenge API and a React checkout in `apps/web`. The frontend uses the supplied sandbox only; no real card details are entered.
 
-Для отбора нужно выполнить оба тестовых: [оформление заказа](https://github.com/instatdigital/frontend-checkout-challenge) и [канвас на React Flow](https://github.com/instatdigital/frontend-canvas-challenge). Пришлите ссылки на оба решения.
+Challenge references: [assignment](docs/ASSIGNMENT.md), [integration](docs/INTEGRATION.md), and [evaluation](docs/EVALUATION.md). The separate [React Flow canvas challenge](https://github.com/instatdigital/frontend-canvas-challenge) remains a separate submission.
 
-[Условия задания](docs/ASSIGNMENT.md) · [Работа с API](docs/INTEGRATION.md) · [Критерии оценки](docs/EVALUATION.md)
+## Requirements and run
 
-Главный критерий — обобщение кода и минимум повторяющихся операций. Одинаковые проверки HTTP-ответов и разбор ошибок в компонентах недопустимы. Отдельно оцениваем стоимость обработки данных: лишние проходы, копирования и повторные поиски снижают результат.
-
-## Запуск
-
-Потребуются Node.js 24.x и npm 11.x. Отдельная база данных и ключи внешних сервисов не нужны.
+Use Node.js 24.x and npm 11.x. From the repository root:
 
 ```sh
-git clone https://github.com/instatdigital/frontend-checkout-challenge.git
-cd frontend-checkout-challenge
 npm ci
-npm run dev
+npm run dev       # API at http://localhost:4000
+npm run dev:web   # Vite at http://localhost:5173, in a second terminal
 ```
 
-Swagger: [http://localhost:4000/docs/](http://localhost:4000/docs/). Спецификация: [http://localhost:4000/openapi.json](http://localhost:4000/openapi.json) или [файл в репозитории](docs/openapi.json).
+`VITE_API_BASE_URL` can override the frontend API URL. The API uses `.data/store.json` for demo data and requires no external account. For a production API build, run `npm run build` and then `npm start`. The API reference is in `docs/INTEGRATION.md` and `docs/openapi.json`.
 
-В Swagger выполните `POST /api/sessions` с телом `{}`. Скопируйте `data.token` в **Authorize**, без слова `Bearer`.
+Run one API instance per data file. To reset the demo data, stop the API and run `npm run data:reset`; then start it and create a new session. Test contacts such as `buyer@example.test` are sufficient.
 
-## Структура
-
-```text
-apps/api/             бэкенд
-apps/web/             ваш фронтенд
-packages/contracts/   схемы API и типы TypeScript
-docs/                 задание и документация
-scripts/              проверки
-```
-
-Проект использует npm workspaces. Приложение в `apps/web` назовите `@checkout/web`. Добавьте команды запуска фронтенда в README своего решения. Пока его нет, `npm run dev` запускает только API.
-
-## Проверки
+## Checks
 
 ```sh
-npm run check       # форматирование, сборка, тесты и OpenAPI
-npm run build
-npm start           # запуск собранного бэкенда
+npm run typecheck:web
+npm run test:web
+npm run build:web
+npm run check       # format, API build/tests, OpenAPI consistency
+npm run smoke       # with npm start running in another terminal
+npx playwright install chromium
+npm run test:e2e    # starts the API and Vite through Playwright webServer
 ```
 
-При работающем API в другом терминале выполните `npm run smoke`. Эта команда проверяет покупку, отказ карты, отмену и повтор оплаты по HTTP.
+`npm run test:e2e -- --project=desktop` runs the 1280px project; `--project=mobile` runs the 390px project. Each Playwright test creates a separate guest session. CI runs root checks, web typecheck/tests/build, Chromium E2E, and API smoke. The smoke step starts the built API independently.
 
-## Настройки
+## Architecture and recovery
 
-Адрес по умолчанию — `127.0.0.1:4000`. Если порт занят, скопируйте `.env.example` в `.env` и измените `PORT`. Для проверки другого порта передайте `BASE_URL`, например `BASE_URL=http://localhost:4100 npm run smoke`.
+`apiClient` owns fetch, base URL, common headers, JSON encoding, response envelopes, empty responses, and error normalization. `checkoutApi` describes individual endpoints. TanStack Query owns server state: public keys begin with `['public', ...]`, authenticated keys with `['session', sessionScope, ...]`, and the Cart has one canonical entry. Cart, Quote, Order, and Payment amounts and statuses come from the API.
 
-Фронтенд может работать на любом HTTP-порту `localhost`, `127.0.0.1` или `[::1]`. Другие разрешённые адреса задаются в `CORS_ORIGINS`. Авторизация передаётся заголовком; cookies и `credentials: include` не нужны.
+Versioned local storage holds only session credentials and recovery metadata. Bootstrap validates a saved session against the API. A Quote is accepted only for its current request revision, normalized Cart-version/delivery signature, and canonical Cart version; an old response cannot restore a stale Quote. Order and Payment creation persist one exact serialized body and `Idempotency-Key` before sending. Unknown outcomes replay that same body/key; a known terminal Payment permits a new attempt with a new key on the same Order. Simulation keeps its chosen scenario for the attempt, polls using `Retry-After`, and stops at a terminal result or unmount. Card success is shown only after an authoritative Order has both `status=paid` and `paymentStatus=succeeded`. Cash creates no Payment.
 
-Данные сохраняются в `.data/store.json`. Запускайте один экземпляр API на один файл. Для сброса остановите сервер и выполните `npm run data:reset`; затем создайте новую сессию. Если меняли `DATA_FILE`, свой файл удалите вручную при остановленном сервере.
+Playwright covers card success, decline and retry, cancellation and a new attempt, reload recovery, cash without Payment, and stale Cart/Quote recovery on desktop and mobile. Double clicks are exercised on Order and Payment creation. Unit tests cover exact idempotent replay after uncertain outcomes; browser E2E does not intercept a processed response because the browser cannot deterministically know whether the server committed it without changing production behavior. The E2E suite also checks horizontal overflow and reachable payment controls. Focus, labels, radio/select behavior, errors, and status announcements receive a keyboard smoke during final validation; this is not a full accessibility audit.
 
-Товары и адреса вымышленные. Остаток ограничивает количество в одной корзине и не уменьшается у других покупателей. Для получателя используйте тестовые контакты, например `buyer@example.test`. Вместо ввода номера карты интерфейс должен предлагать тестовые карты из API.
+Known limits: if `currentOrderId` is lost, the Order list has no reliable originating idempotency key or Quote ID with which to match an unresolved local intent. Separate tabs do not have coordinated mutation locking.
 
-Корневые команды сборки и тестов проверяют бэкенд. В решении добавьте отдельные команды запуска и сборки `apps/web`, а после установки его зависимостей обновите корневой `package-lock.json`. Схемы API в `packages/contracts` можно использовать напрямую или описать нужные типы у себя.
+## Performance review
+
+`CatalogCart` builds `cartItemsByProduct` and `productsById` maps once per respective query result. For `c` Cart items and `p` products, construction takes one pass over each collection, `O(c + p)` time and `O(c + p)` additional space. Rendering the product and Cart lists then uses expected `O(1)` lookups per row, for `O(p + c)` total time. Repeated `.find()` calls for each rendered row would take up to `O(p × c)` time. The maps are memoized by the server-result array references, so local UI changes do not rebuild them. The collections are small here, but the indexing avoids a real nested-search cost without introducing persistent cache invalidation rules.
