@@ -23,6 +23,22 @@ function makeClient(fetchImpl: typeof fetch, token: string | null = null) {
 }
 
 describe('apiClient', () => {
+  it('sends the persisted serialized Order bytes and key unchanged', async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(success({ id: 'order-1' })));
+    const body = '{"quoteId":"quote-1","customer":{"name":"Buyer"},"paymentMethod":"card"}';
+    await makeClient(fetchImpl, 'token-1').request({
+      path: '/api/orders',
+      method: 'POST',
+      auth: 'session',
+      serializedBody: body,
+      idempotencyKey: 'key-1',
+    });
+    const init = fetchImpl.mock.calls[0][1];
+    expect(init?.body).toBe(body);
+    expect(new Headers(init?.headers).get('Idempotency-Key')).toBe('key-1');
+  });
   it('returns the centralized success envelope including meta requestId', async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(success({ ok: true })));
 

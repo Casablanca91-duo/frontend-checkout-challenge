@@ -76,6 +76,9 @@ const serverPathToField: Array<[string, CheckoutField]> = [
   ['/delivery/address/street', 'street'],
   ['/delivery/address/house', 'house'],
   ['/delivery/address/apartment', 'apartment'],
+  ['/customer/name', 'name'],
+  ['/customer/email', 'email'],
+  ['/customer/phone', 'phone'],
 ];
 
 export function fieldErrorsFromApi(error: unknown): CheckoutFieldErrors {

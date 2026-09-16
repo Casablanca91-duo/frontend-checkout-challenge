@@ -16,6 +16,7 @@ type CommonRequestOptions = {
   auth: AuthMode;
   idempotencyKey?: string;
   signal?: AbortSignal;
+  serializedBody?: string;
 };
 
 type RequestOptions = CommonRequestOptions &
@@ -109,7 +110,8 @@ export function createApiClient({
     }
 
     const headers = new Headers();
-    if (options.body !== undefined) headers.set('Content-Type', 'application/json');
+    if (options.body !== undefined || options.serializedBody !== undefined)
+      headers.set('Content-Type', 'application/json');
     if (options.idempotencyKey) headers.set('Idempotency-Key', options.idempotencyKey);
     if (options.auth === 'session') {
       const token = getSessionToken();
@@ -122,7 +124,9 @@ export function createApiClient({
       response = await fetchImpl(new URL(options.path, normalizedBaseUrl), {
         method: options.method,
         headers,
-        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        body:
+          options.serializedBody ??
+          (options.body === undefined ? undefined : JSON.stringify(options.body)),
         signal: options.signal,
       });
     } catch (error) {

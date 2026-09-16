@@ -1,10 +1,12 @@
-import type { Cart, Quote } from '@checkout/contracts';
+import type { Cart, Order, Quote } from '@checkout/contracts';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { HttpApiError, NetworkError } from '../../api/errors';
+import type { CheckoutOptions } from '../../api/checkout-api';
 import { createCheckoutQueryClient, queryKeys } from '../../lib/query-client';
+import type { CheckoutRecovery } from '../../lib/storage';
 import { CheckoutPage } from './CheckoutPage';
 import { checkoutOptionsQueryOptions, quoteRequestSignature } from './queries';
 
@@ -12,9 +14,24 @@ const api = vi.hoisted(() => ({
   getCheckoutOptions: vi.fn(),
   getCart: vi.fn(),
   createQuote: vi.fn(),
+  createOrder: vi.fn(),
+  getOrder: vi.fn(),
+  listOrders: vi.fn(),
 }));
 
-vi.mock('../../runtime', () => ({ checkoutApi: api }));
+const recovery = vi.hoisted(() => {
+  let record: CheckoutRecovery | null = null;
+  return {
+    read: vi.fn(() => record),
+    write: vi.fn((next: CheckoutRecovery) => {
+      record = next;
+    }),
+    clear: vi.fn(() => {
+      record = null;
+    }),
+  };
+});
+vi.mock('../../runtime', () => ({ checkoutApi: api, recoveryStorage: recovery }));
 
 const cart: Cart = {
   id: '00000000-0000-4000-8000-000000000001',
@@ -78,9 +95,12 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function renderCheckout(initialCart = cart) {
+function renderCheckout(
+  initialCart = cart,
+  paymentMethods: CheckoutOptions['paymentMethods'] = [],
+) {
   api.getCart.mockResolvedValue(initialCart);
-  api.getCheckoutOptions.mockResolvedValue({ ...options, cart: initialCart });
+  api.getCheckoutOptions.mockResolvedValue({ ...options, cart: initialCart, paymentMethods });
   const queryClient = createCheckoutQueryClient();
   render(
     <MemoryRouter>
@@ -106,8 +126,45 @@ async function fillPickup() {
   });
 }
 
+async function readyToOrder(method: 'card' | 'cash_on_delivery' = 'cash_on_delivery') {
+  api.createQuote.mockResolvedValue(quote);
+  renderCheckout(cart, [
+    { id: 'card', title: 'Картой' },
+    { id: 'cash_on_delivery', title: 'Наличными при получении' },
+  ]);
+  await fillPickup();
+  fireEvent.click(screen.getByRole('button', { name: 'Рассчитать доставку и итог' }));
+  await screen.findByRole('heading', { name: 'Способ оплаты' });
+  fireEvent.click(
+    screen.getByRole('radio', { name: method === 'card' ? 'Картой' : 'Наличными при получении' }),
+  );
+}
+
+const createdOrder: Order = {
+  id: '00000000-0000-4000-8000-000000000005',
+  number: 'DEMO-000001',
+  status: 'confirmed',
+  paymentStatus: 'unpaid',
+  paymentMethod: 'cash_on_delivery',
+  customer: { name: 'Тестовый Покупатель', email: 'buyer@example.test', phone: '+79990000000' },
+  items: quote.items,
+  delivery: quote.delivery,
+  subtotal: quote.subtotal,
+  shipping: quote.shipping,
+  total: quote.total,
+  currency: 'RUB',
+  createdAt: '2026-09-15T14:00:00.000Z',
+};
+
 describe('Checkout Page', () => {
-  beforeEach(() => vi.resetAllMocks());
+  beforeEach(() => {
+    vi.resetAllMocks();
+    recovery.write({
+      schemaVersion: 1,
+      sessionToken: 'token-1',
+      updatedAt: new Date().toISOString(),
+    });
+  });
 
   it('uses one session-scoped Checkout Options key', () => {
     expect(checkoutOptionsQueryOptions('scope-1').queryKey).toEqual([
@@ -115,6 +172,110 @@ describe('Checkout Page', () => {
       'scope-1',
       'checkout-options',
     ]);
+  });
+
+  it.each(['cash_on_delivery', 'card'] as const)(
+    'creates %s Order using server-provided payment option and current Quote',
+    async (method) => {
+      const pending = deferred<Order>();
+      api.createOrder.mockReturnValue(pending.promise);
+      api.getCart.mockResolvedValueOnce(cart).mockResolvedValueOnce(emptyCart);
+      await readyToOrder(method);
+      const submitOrder = screen.getByRole('button', { name: 'Оформить заказ' });
+      fireEvent.click(submitOrder);
+      fireEvent.click(submitOrder);
+      await waitFor(() => expect(api.createOrder).toHaveBeenCalledTimes(1));
+      const [serialized, key] = api.createOrder.mock.calls[0];
+      expect(JSON.parse(serialized)).toEqual({
+        quoteId: quote.id,
+        customer: createdOrder.customer,
+        paymentMethod: method,
+      });
+      expect(key).toBe(recovery.read()?.pendingMutation?.idempotencyKey);
+      expect(recovery.read()?.pendingMutation?.payload).toBe(serialized);
+      pending.resolve({
+        ...createdOrder,
+        paymentMethod: method,
+        status: method === 'card' ? 'awaiting_payment' : 'confirmed',
+      });
+      await screen.findByText(
+        method === 'card' ? 'Заказ создан, ожидает оплаты' : 'Заказ оформлен, оплата при получении',
+      );
+      expect(screen.getByText('DEMO-000001', { exact: false })).toBeInTheDocument();
+      expect(screen.getByText(/Лампа «Орбита» × 2/)).toBeInTheDocument();
+      expect(screen.getByText(/Самовывоз, пункт point-center/)).toBeInTheDocument();
+      expect(recovery.read()?.currentOrderId).toBe(createdOrder.id);
+      expect(recovery.read()?.pendingMutation).toBeUndefined();
+      await waitFor(() => expect(api.getCart).toHaveBeenCalledTimes(2));
+    },
+  );
+
+  it('recovers current Order from server rather than local Order data', async () => {
+    recovery.write({
+      schemaVersion: 1,
+      sessionToken: 'token-1',
+      currentOrderId: createdOrder.id,
+      updatedAt: new Date().toISOString(),
+    });
+    api.getOrder.mockResolvedValue(createdOrder);
+    renderCheckout(emptyCart);
+    await screen.findByText('Заказ оформлен, оплата при получении');
+    expect(api.getOrder).toHaveBeenCalledWith(createdOrder.id, expect.any(AbortSignal));
+  });
+
+  it.each(['QUOTE_EXPIRED', 'QUOTE_NOT_FOUND', 'CART_VERSION_CONFLICT'])(
+    '%s clears the Quote intent and preserves form input',
+    async (code) => {
+      api.createOrder.mockRejectedValue(
+        new HttpApiError(code === 'QUOTE_NOT_FOUND' ? 404 : 409, code, code, undefined, 'req'),
+      );
+      await readyToOrder();
+      fireEvent.click(screen.getByRole('button', { name: 'Оформить заказ' }));
+      await waitFor(() => expect(api.createOrder).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(recovery.read()?.pendingMutation).toBeUndefined());
+      expect(screen.getByLabelText(/Имя/)).toHaveValue('Тестовый Покупатель');
+      expect(screen.queryByRole('heading', { name: 'Способ оплаты' })).not.toBeInTheDocument();
+      expect(api.getCart).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('maps backend customer field errors to their controls', async () => {
+    api.createOrder.mockRejectedValue(
+      new HttpApiError(
+        422,
+        'VALIDATION_ERROR',
+        'Invalid',
+        [{ path: '/customer/email', message: 'Email отклонён сервером' }],
+        'req',
+      ),
+    );
+    await readyToOrder();
+    fireEvent.click(screen.getByRole('button', { name: 'Оформить заказ' }));
+    expect(await screen.findByText('Email отклонён сервером')).toBeInTheDocument();
+    expect(screen.getByLabelText(/Email/)).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByLabelText(/Email/)).toHaveValue('buyer@example.test');
+  });
+
+  it('does not prepare or send an Order when customer validation fails', async () => {
+    await readyToOrder();
+    fireEvent.change(screen.getByLabelText(/Имя/), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Оформить заказ' }));
+    expect(screen.getByLabelText(/Имя/)).toHaveAttribute('aria-invalid', 'true');
+    expect(api.createOrder).not.toHaveBeenCalled();
+    expect(recovery.read()?.pendingMutation).toBeUndefined();
+  });
+
+  it('preserves the key and consults server orders on idempotency conflict without guessing an Order', async () => {
+    api.createOrder.mockRejectedValue(
+      new HttpApiError(409, 'IDEMPOTENCY_CONFLICT', 'Conflict', undefined, 'req'),
+    );
+    api.listOrders.mockResolvedValue([createdOrder]);
+    await readyToOrder();
+    fireEvent.click(screen.getByRole('button', { name: 'Оформить заказ' }));
+    await screen.findByText(/На сервере найдено заказов в этой сессии: 1/);
+    expect(api.listOrders).toHaveBeenCalledTimes(1);
+    expect(recovery.read()?.pendingMutation?.phase).toBe('outcomeUnknown');
+    expect(recovery.read()?.currentOrderId).toBeUndefined();
   });
 
   it('normalizes the Quote signature and includes the canonical Cart version', () => {

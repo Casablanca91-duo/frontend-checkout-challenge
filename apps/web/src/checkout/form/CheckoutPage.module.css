@@ -59,6 +59,10 @@
   padding-top: 32px;
 }
 
+.layout[hidden] {
+  display: none;
+}
+
 .form {
   display: grid;
   min-width: 0;
@@ -314,6 +318,11 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 16px;
+}
+
+.quoteItems li > span,
+.quote p {
+  overflow-wrap: anywhere;
 }
 
 .totals {

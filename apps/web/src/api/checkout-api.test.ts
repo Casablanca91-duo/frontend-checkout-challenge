@@ -107,4 +107,33 @@ describe('checkout API', () => {
       signal: undefined,
     });
   });
+
+  it('sends a prepared Order body unchanged with one key and loads authoritative Order', async () => {
+    const order = { id: '00000000-0000-4000-8000-000000000005' };
+    const { api, request } = makeApi([{ data: order }, { data: order }, { data: [order] }]);
+    const serializedBody =
+      '{"quoteId":"quote-1","customer":{"name":"Buyer"},"paymentMethod":"card"}';
+    await expect(api.createOrder(serializedBody, 'key-1')).resolves.toBe(order);
+    expect(request).toHaveBeenNthCalledWith(1, {
+      path: '/api/orders',
+      method: 'POST',
+      auth: 'session',
+      serializedBody,
+      idempotencyKey: 'key-1',
+    });
+    await expect(api.getOrder(order.id)).resolves.toBe(order);
+    expect(request).toHaveBeenNthCalledWith(2, {
+      path: `/api/orders/${order.id}`,
+      method: 'GET',
+      auth: 'session',
+      signal: undefined,
+    });
+    await expect(api.listOrders()).resolves.toEqual([order]);
+    expect(request).toHaveBeenNthCalledWith(3, {
+      path: '/api/orders',
+      method: 'GET',
+      auth: 'session',
+      signal: undefined,
+    });
+  });
 });
